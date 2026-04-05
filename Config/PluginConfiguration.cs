@@ -6,6 +6,18 @@ using Microsoft.Extensions.Logging;
 
 namespace Gelato.Config;
 
+/// <summary>
+/// Controls which intro/segment database provider is used.
+/// </summary>
+public enum IntroDbProvider
+{
+    /// <summary>Use IntroDB (introdb.app) — intro segments only, no API key required.</summary>
+    IntroDB = 0,
+
+    /// <summary>Use TheIntroDB (theintrodb.org) — intro, recap, credits, and preview segments. Free API key recommended.</summary>
+    TheIntroDB = 1,
+}
+
 public class PluginConfiguration : BasePluginConfiguration
 {
     public string MoviePath { get; set; } = Path.Combine(Path.GetTempPath(), "gelato", "movies");
@@ -26,6 +38,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public int MaxCollectionItems { get; set; } = 100;
     public bool DisableSearch { get; set; } = false;
     public bool EnableJavaScriptInjection { get; set; } = false;
+
+    /// <summary>Which intro/segment database provider to use.</summary>
+    public IntroDbProvider IntroDbProvider { get; set; } = IntroDbProvider.IntroDB;
+
+    /// <summary>API key for TheIntroDB (theintrodb.org). Optional but recommended to avoid rate limiting.</summary>
+    public string IntroDbApiKey { get; set; } = "";
     public List<CatalogConfig> Catalogs { get; set; } = [];
     public List<UserConfig> UserConfigs { get; set; } = [];
 
@@ -97,6 +115,8 @@ public class UserConfig
             CreateCollections = baseConfig.CreateCollections,
             MaxCollectionItems = baseConfig.MaxCollectionItems,
             UserConfigs = baseConfig.UserConfigs,
+            IntroDbProvider = baseConfig.IntroDbProvider,
+            IntroDbApiKey = baseConfig.IntroDbApiKey,
         };
     }
 }

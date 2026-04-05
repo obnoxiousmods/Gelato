@@ -163,6 +163,30 @@
               <div class="fieldDescription">Cache duration for external stream URLs.</div>
             </div>
 
+            <h3 class="sectionTitle" style="margin-top: 2em;">Intro Skip Provider</h3>
+
+            <div class="inputContainer">
+              <label class="inputLabel inputLabelUnfocused" for="selIntroDbProvider">Provider:</label>
+              <select is="emby-select" id="selIntroDbProvider" class="emby-select-withcolor emby-select">
+                <option value="0">IntroDB (introdb.app) — intros only, no key required</option>
+                <option value="1">TheIntroDB (theintrodb.org) — intros, recaps, credits &amp; previews</option>
+              </select>
+              <div class="fieldDescription">
+                Choose which database to use for intro/segment detection. TheIntroDB supports more segment types
+                (recap, credits, preview) but requires a free API key to avoid rate limiting.
+              </div>
+            </div>
+
+            <div class="inputContainer" id="theIntroDbApiKeyContainer" style="display: none;">
+              <label class="inputLabel inputLabelUnfocused" for="txtIntroDbApiKey">TheIntroDB API Key:</label>
+              <input is="emby-input" type="text" id="txtIntroDbApiKey" class="emby-input"
+                placeholder="user_xxx:yyy" autocomplete="off" />
+              <div class="fieldDescription">
+                Optional but recommended. Get a free key at
+                <a href="https://theintrodb.org" target="_blank" rel="noopener">theintrodb.org</a>.
+              </div>
+            </div>
+
           </div>
 
           <!-- User Configs Tab -->
@@ -275,6 +299,17 @@
         const txtFFmpegAnalyzeDuration = page.querySelector('#txtFFmpegAnalyzeDuration');
         const txtFFmpegProbeSize = page.querySelector('#txtFFmpegProbeSize');
         const chkEnableJavaScriptInjection = page.querySelector('#chkEnableJavaScriptInjection');
+        const selIntroDbProvider = page.querySelector('#selIntroDbProvider');
+        const txtIntroDbApiKey = page.querySelector('#txtIntroDbApiKey');
+        const theIntroDbApiKeyContainer = page.querySelector('#theIntroDbApiKeyContainer');
+
+        if (selIntroDbProvider) {
+          selIntroDbProvider.addEventListener('change', function () {
+            if (theIntroDbApiKeyContainer) {
+              theIntroDbApiKeyContainer.style.display = this.value === '1' ? '' : 'none';
+            }
+          });
+        }
 
         // Catalogs
         const catalogsList = page.querySelector('#catalogsList');
@@ -553,6 +588,13 @@
             if (txtFFmpegAnalyzeDuration) txtFFmpegAnalyzeDuration.value = cfg.FFmpegAnalyzeDuration || "5M";
             if (txtFFmpegProbeSize) txtFFmpegProbeSize.value = cfg.FFmpegProbeSize || "25M";
             if (chkEnableJavaScriptInjection) chkEnableJavaScriptInjection.checked = cfg.EnableJavaScriptInjection || false;
+            if (selIntroDbProvider) {
+              selIntroDbProvider.value = String(cfg.IntroDbProvider ?? 0);
+              if (theIntroDbApiKeyContainer) {
+                theIntroDbApiKeyContainer.style.display = (cfg.IntroDbProvider === 1) ? '' : 'none';
+              }
+            }
+            if (txtIntroDbApiKey) txtIntroDbApiKey.value = cfg.IntroDbApiKey || "";
 
             // User Overrides Logic
             await loadUsers();
@@ -586,6 +628,8 @@
             cfg.FFmpegAnalyzeDuration = txtFFmpegAnalyzeDuration.value;
             cfg.FFmpegProbeSize = txtFFmpegProbeSize.value;
             cfg.EnableJavaScriptInjection = chkEnableJavaScriptInjection.checked;
+            cfg.IntroDbProvider = selIntroDbProvider ? parseInt(selIntroDbProvider.value, 10) : 0;
+            cfg.IntroDbApiKey = txtIntroDbApiKey ? txtIntroDbApiKey.value.trim() : "";
 
             // Only collect catalog states if catalogs have been loaded (i.e., if we're on catalogs tab or it was loaded)
             if (allCatalogs.length > 0) {

@@ -3,7 +3,6 @@ using Gelato.Decorators;
 using Gelato.Filters;
 using Gelato.Providers;
 using Gelato.Services;
-//using IntroDbPlugin.Services;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Dto;
@@ -53,6 +52,14 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             client.Timeout = TimeSpan.FromSeconds(IntroDbClient.DefaultTimeoutSeconds);
         });
         services.AddSingleton<IMediaSegmentProvider, IntroDbSegmentProvider>();
+
+        // Register HttpClient for TheIntroDbClient
+        services.AddHttpClient<TheIntroDbClient>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.theintrodb.org/v2");
+            client.Timeout = TimeSpan.FromSeconds(TheIntroDbClient.DefaultTimeoutSeconds);
+        });
+        services.AddSingleton<IMediaSegmentProvider, TheIntroDbSegmentProvider>();
 
         services.AddHostedService<GelatoService>();
         services

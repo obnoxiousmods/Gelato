@@ -26,9 +26,9 @@ using Microsoft.Extensions.Logging;
 namespace Gelato.Providers;
 
 /// <summary>
-/// IntroDB media segment provider.
+/// TheIntroDB media segment provider — supports intro, recap, credits, and preview segments.
 /// </summary>
-public class IntroDbSegmentProvider : IMediaSegmentProvider
+public class TheIntroDbSegmentProvider : IMediaSegmentProvider
 {
     private const long TicksPerSecond = TimeSpan.TicksPerSecond;
     private const string ImdbIdPattern = @"\btt\d{7,8}\b";
@@ -44,32 +44,29 @@ public class IntroDbSegmentProvider : IMediaSegmentProvider
     );
 
     private readonly ILibraryManager _libraryManager;
-    private readonly IntroDbClient _introDbClient;
-    private readonly ILogger<IntroDbSegmentProvider> _logger;
+    private readonly TheIntroDbClient _theIntroDbClient;
+    private readonly ILogger<TheIntroDbSegmentProvider> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="IntroDbSegmentProvider"/> class.
+    /// Initializes a new instance of the <see cref="TheIntroDbSegmentProvider"/> class.
     /// </summary>
-    /// <param name="libraryManager">Library manager.</param>
-    /// <param name="introDbClient">IntroDB client.</param>
-    /// <param name="logger">Logger.</param>
-    public IntroDbSegmentProvider(
+    public TheIntroDbSegmentProvider(
         ILibraryManager libraryManager,
-        IntroDbClient introDbClient,
-        ILogger<IntroDbSegmentProvider> logger
+        TheIntroDbClient theIntroDbClient,
+        ILogger<TheIntroDbSegmentProvider> logger
     )
     {
         ArgumentNullException.ThrowIfNull(libraryManager);
-        ArgumentNullException.ThrowIfNull(introDbClient);
+        ArgumentNullException.ThrowIfNull(theIntroDbClient);
         ArgumentNullException.ThrowIfNull(logger);
 
         _libraryManager = libraryManager;
-        _introDbClient = introDbClient;
+        _theIntroDbClient = theIntroDbClient;
         _logger = logger;
     }
 
     /// <inheritdoc />
-    public string Name => "Gelato IntroDB";
+    public string Name => "Gelato TheIntroDB";
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<MediaSegmentDto>> GetMediaSegments(
@@ -78,15 +75,15 @@ public class IntroDbSegmentProvider : IMediaSegmentProvider
     )
     {
         ArgumentNullException.ThrowIfNull(request);
-        Debug.Assert(
-            request.ItemId != Guid.Empty,
-            "Media segment request should contain an item id."
-        );
+        Debug.Assert(request.ItemId != Guid.Empty, "Media segment request should contain an item id.");
 
-        if (GelatoPlugin.Instance?.Configuration?.IntroDbProvider == IntroDbProvider.TheIntroDB)
+        var config = GelatoPlugin.Instance?.Configuration;
+        if (config?.IntroDbProvider == IntroDbProvider.IntroDB)
         {
             return Array.Empty<MediaSegmentDto>();
         }
+
+        _theIntroDbClient.SetApiKey(config?.IntroDbApiKey);
 
         var item = _libraryManager.GetItemById(request.ItemId);
         if (item is not Episode episode)
@@ -97,7 +94,7 @@ public class IntroDbSegmentProvider : IMediaSegmentProvider
         if (!TryGetImdbId(episode, out var imdbId))
         {
             _logger.LogDebug(
-                "Skipping IntroDB lookup for {ItemId}: IMDb id missing.",
+                "Skipping TheIntroDB lookup for {ItemId}: IMDb id missing.",
                 request.ItemId
             );
             return Array.Empty<MediaSegmentDto>();
@@ -106,17 +103,17 @@ public class IntroDbSegmentProvider : IMediaSegmentProvider
         if (!TryGetSeasonEpisodeNumbers(episode, out var seasonNumber, out var episodeNumber))
         {
             _logger.LogDebug(
-                "Skipping IntroDB lookup for {ItemId}: invalid season/episode number.",
+                "Skipping TheIntroDB lookup for {ItemId}: invalid season/episode number.",
                 request.ItemId
             );
             return Array.Empty<MediaSegmentDto>();
         }
 
-        IntroDbIntroResult? result;
+        TheIntroDbSegmentResult? result;
         try
         {
-            result = await _introDbClient
-                .GetIntroAsync(imdbId, seasonNumber, episodeNumber, cancellationToken)
+            result = await _theIntroDbClient
+                .GetSegmentsAsync(imdbId, seasonNumber, episodeNumber, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -127,11 +124,8 @@ public class IntroDbSegmentProvider : IMediaSegmentProvider
         {
             _logger.LogWarning(
                 exception,
-                "IntroDB lookup failed for {ItemId} (IMDb {ImdbId} S{Season}E{Episode}).",
-                request.ItemId,
-                imdbId,
-                seasonNumber,
-                episodeNumber
+                "TheIntroDB lookup failed for {ItemId} (IMDb {ImdbId} S{Season}E{Episode}).",
+                request.ItemId, imdbId, seasonNumber, episodeNumber
             );
             return Array.Empty<MediaSegmentDto>();
         }
@@ -139,50 +133,85 @@ public class IntroDbSegmentProvider : IMediaSegmentProvider
         if (result is null)
         {
             _logger.LogInformation(
-                "IntroDB returned no intro for {ItemId} (IMDb {ImdbId} S{Season}E{Episode}).",
-                request.ItemId,
-                imdbId,
-                seasonNumber,
-                episodeNumber
+                "TheIntroDB returned no segments for {ItemId} (IMDb {ImdbId} S{Season}E{Episode}).",
+                request.ItemId, imdbId, seasonNumber, episodeNumber
             );
             return Array.Empty<MediaSegmentDto>();
         }
 
-        var startTicks = (long)(result.StartSeconds * TicksPerSecond);
-        var endTicks = (long)(result.EndSeconds * TicksPerSecond);
-        if (endTicks <= startTicks)
-        {
-            _logger.LogWarning("IntroDB returned invalid segment for {ItemId}.", request.ItemId);
-            return Array.Empty<MediaSegmentDto>();
-        }
+        var segments = new List<MediaSegmentDto>();
 
-        if (
-            episode.RunTimeTicks.HasValue
-            && episode.RunTimeTicks.Value > 0
-            && endTicks > episode.RunTimeTicks.Value
-        )
-        {
-            _logger.LogWarning(
-                "IntroDB returned segment beyond duration for {ItemId}.",
-                request.ItemId
-            );
-            return Array.Empty<MediaSegmentDto>();
-        }
+        AddSegments(segments, request.ItemId, result.Intros, MediaSegmentType.Intro, episode, "intro");
+        AddSegments(segments, request.ItemId, result.Recaps, MediaSegmentType.Recap, episode, "recap");
+        AddSegments(segments, request.ItemId, result.Credits, MediaSegmentType.Outro, episode, "credits");
+        AddSegments(segments, request.ItemId, result.Previews, MediaSegmentType.Preview, episode, "preview");
 
-        return new List<MediaSegmentDto>
-        {
-            new()
-            {
-                ItemId = request.ItemId,
-                StartTicks = startTicks,
-                EndTicks = endTicks,
-                Type = MediaSegmentType.Intro,
-            },
-        };
+        return segments;
     }
 
     /// <inheritdoc />
     public ValueTask<bool> Supports(BaseItem item) => ValueTask.FromResult(item is Episode);
+
+    private void AddSegments(
+        List<MediaSegmentDto> output,
+        Guid itemId,
+        List<TheIntroDbSegment> segments,
+        MediaSegmentType type,
+        Episode episode,
+        string typeName
+    )
+    {
+        foreach (var seg in segments)
+        {
+            var startTicks = (long)(seg.StartSeconds * TicksPerSecond);
+
+            long endTicks;
+            if (seg.EndSeconds.HasValue)
+            {
+                endTicks = (long)(seg.EndSeconds.Value * TicksPerSecond);
+            }
+            else if (episode.RunTimeTicks.HasValue && episode.RunTimeTicks.Value > 0)
+            {
+                endTicks = episode.RunTimeTicks.Value;
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "TheIntroDB {Type} segment for {ItemId} has null end_ms and no known runtime; skipping.",
+                    typeName, itemId
+                );
+                continue;
+            }
+
+            if (endTicks <= startTicks)
+            {
+                _logger.LogWarning(
+                    "TheIntroDB returned invalid {Type} segment for {ItemId}: start={Start} >= end={End}.",
+                    typeName, itemId, startTicks, endTicks
+                );
+                continue;
+            }
+
+            if (episode.RunTimeTicks.HasValue
+                && episode.RunTimeTicks.Value > 0
+                && endTicks > episode.RunTimeTicks.Value)
+            {
+                _logger.LogWarning(
+                    "TheIntroDB returned {Type} segment beyond duration for {ItemId}; clamping.",
+                    typeName, itemId
+                );
+                endTicks = episode.RunTimeTicks.Value;
+            }
+
+            output.Add(new MediaSegmentDto
+            {
+                ItemId = itemId,
+                StartTicks = startTicks,
+                EndTicks = endTicks,
+                Type = type,
+            });
+        }
+    }
 
     private bool TryGetImdbId(Episode episode, out string imdbId)
     {
@@ -192,10 +221,8 @@ public class IntroDbSegmentProvider : IMediaSegmentProvider
         )
         {
             if (
-                series.ProviderIds.TryGetValue(
-                    MetadataProvider.Imdb.ToString(),
-                    out var seriesImdbId
-                ) && !string.IsNullOrWhiteSpace(seriesImdbId)
+                series.ProviderIds.TryGetValue(MetadataProvider.Imdb.ToString(), out var seriesImdbId)
+                && !string.IsNullOrWhiteSpace(seriesImdbId)
             )
             {
                 imdbId = seriesImdbId;
@@ -204,10 +231,8 @@ public class IntroDbSegmentProvider : IMediaSegmentProvider
         }
 
         if (
-            episode.ProviderIds.TryGetValue(
-                MetadataProvider.Imdb.ToString(),
-                out var providerImdbId
-            ) && !string.IsNullOrWhiteSpace(providerImdbId)
+            episode.ProviderIds.TryGetValue(MetadataProvider.Imdb.ToString(), out var providerImdbId)
+            && !string.IsNullOrWhiteSpace(providerImdbId)
         )
         {
             imdbId = providerImdbId;
