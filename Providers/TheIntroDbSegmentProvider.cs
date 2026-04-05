@@ -150,7 +150,26 @@ public class TheIntroDbSegmentProvider : IMediaSegmentProvider
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> Supports(BaseItem item) => ValueTask.FromResult(item is Episode);
+    public ValueTask<bool> Supports(BaseItem item)
+    {
+        if (item is not Episode episode)
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        // Exclude Gelato stubs and virtual streaming items — their paths are URLs or
+        // gelato:// URIs that Jellyfin's media encoder cannot handle as file input arguments.
+        var path = episode.Path;
+        if (string.IsNullOrEmpty(path)
+            || path.StartsWith("gelato://", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        return ValueTask.FromResult(true);
+    }
 
     private void AddSegments(
         List<MediaSegmentDto> output,
