@@ -163,7 +163,7 @@ public class IntroDbSegmentProvider : IMediaSegmentProvider
             return Array.Empty<MediaSegmentDto>();
         }
 
-        return new List<MediaSegmentDto>
+        var segments = new List<MediaSegmentDto>
         {
             new()
             {
@@ -173,6 +173,31 @@ public class IntroDbSegmentProvider : IMediaSegmentProvider
                 Type = MediaSegmentType.Intro,
             },
         };
+
+        // Gelato creates a stub item (gelato://stub/{imdbId}:{season}:{episode}) that the
+        // web client browses and queries segments for, and separate stream items (with real
+        // URLs) that get probed and trigger this provider. Store the segment under the stub
+        // ID too so the client can find it.
+        var stubPath = $"gelato://stub/{imdbId}:{seasonNumber}:{episodeNumber}";
+        if (!string.Equals(episode.Path, stubPath, StringComparison.OrdinalIgnoreCase))
+        {
+            var stubItems = _libraryManager.GetItemList(new InternalItemsQuery { Path = stubPath });
+            foreach (var stubItem in stubItems)
+            {
+                if (stubItem.Id != request.ItemId)
+                {
+                    segments.Add(new MediaSegmentDto
+                    {
+                        ItemId = stubItem.Id,
+                        StartTicks = startTicks,
+                        EndTicks = endTicks,
+                        Type = MediaSegmentType.Intro,
+                    });
+                }
+            }
+        }
+
+        return segments;
     }
 
     /// <inheritdoc />
