@@ -4,15 +4,15 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Gelato</AssemblyName>
-    <Version>0.26.0.0</Version>
+    <Version>0.26.7.5</Version>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Jellyfin.Model" Version="10.11.5" />
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.5" />
-    <PackageReference Include="Jellyfin.Common" Version="10.11.5" />
+    <PackageReference Include="Jellyfin.Model" Version="10.11.8" />
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.8" />
+    <PackageReference Include="Jellyfin.Common" Version="10.11.8" />
     <PackageReference Include="MonoTorrent" Version="3.0.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="System.Reflection.TypeExtensions" Version="4.7.0" />
@@ -23,6 +23,10 @@
     <!-- Embed all frontend assets so they are delivered with the plugin -->
     <EmbeddedResource Include="Frontend\**\*" />
   </ItemGroup>
+  <Target Name="FixDllPermissions" AfterTargets="Build" Condition="'$(OS)' != 'Windows_NT'">
+    <Exec Command="chmod 644 $(OutDir)*.dll" />
+  </Target>
+
   <Target Name="CleanupJellyfinDlls" AfterTargets="Build">
     <ItemGroup>
       <AllDlls Include="$(OutDir)*.dll" />
