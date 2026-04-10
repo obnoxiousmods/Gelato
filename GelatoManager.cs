@@ -9,6 +9,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Persistence;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.IO;
@@ -21,6 +22,7 @@ public sealed class GelatoManager(
     ILoggerFactory loggerFactory,
     IProviderManager provider,
     GelatoItemRepository repo,
+    IItemPersistenceService itemPersistence,
     IFileSystem fileSystem,
     IMemoryCache memoryCache,
     IServerConfigurationManager serverConfig,
@@ -552,8 +554,7 @@ public sealed class GelatoManager(
             upsertedStreams.Add(streamItem);
         }
 
-        //upsertedStreams = SaveItems(upsertedStreams, (Folder)primary.GetParent()).Cast<Video>().ToList();
-        repo.SaveItems(upsertedStreams, ct);
+        itemPersistence.SaveItems(upsertedStreams, ct);
 
         var newIds = new HashSet<Guid>(upsertedStreams.Select(x => x.Id));
         var stale = existingByGuid
@@ -591,7 +592,7 @@ public sealed class GelatoManager(
             }
         }
 
-        repo.SaveItems(toSave, ct);
+        itemPersistence.SaveItems(toSave, ct);
         upsertedStreams.Add(video);
 
         stopwatch.Stop();
@@ -854,11 +855,14 @@ public sealed class GelatoManager(
                 episode.SeriesPresentationUniqueKey = season.SeriesPresentationUniqueKey;
                 episode.PresentationUniqueKey = episode.GetPresentationUniqueKey();
 
+                // Assign a deterministic ID so repeated syncs don't create duplicates
+                episode.Id = libraryManager.GetNewItemId(episode.Path, episode.GetType());
+
                 episodeList.Add(episode);
                 episodesInserted++;
                 _log.LogTrace("Created episode {EpisodeName}", epMeta.GetName());
             }
-            repo.SaveItems(episodeList, CancellationToken.None);
+            itemPersistence.SaveItems(episodeList, CancellationToken.None);
         }
 
         stopwatch.Stop();
@@ -965,7 +969,7 @@ public sealed class GelatoManager(
             parent.AddChild(item);
         }
 
-        repo.SaveItems(baseItems, CancellationToken.None);
+        itemPersistence.SaveItems(baseItems, CancellationToken.None);
         return baseItems;
     }
 
